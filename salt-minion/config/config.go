@@ -1,7 +1,7 @@
 package config
 
 import (
-	"github.com/tsaridas/salt-golang/salt-minion/utils"
+	"../utils"
 	"gopkg.in/yaml.v2"
 	"io/ioutil"
 	"log"

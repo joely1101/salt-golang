@@ -5,13 +5,14 @@ import (
 	"fmt"
 	zmq "github.com/pebbe/zmq4"
 	"github.com/ryanuber/go-glob"
-	"github.com/tsaridas/salt-golang/salt-minion/auth"
-	"github.com/tsaridas/salt-golang/salt-minion/minionid"
-	"github.com/tsaridas/salt-golang/salt-minion/config"
+	"./auth"
+	"./minionid"
+	"./config"
 	"log"
 	"os"
 	"net"
 	"time"
+	"os/exec"
 )
 
 
@@ -97,6 +98,7 @@ func main() {
 			continue
 		}
 		msg := []byte(contents[0])
+		var replay string = ""
 		_, event := authentication.DecodeEvent(msg)
 		log.Printf("Got function : %s with event %s \n", event["fun"], event)
 		if event == nil {
@@ -104,14 +106,36 @@ func main() {
 		}
 		jid := event["jid"].(string)
 		fun := event["fun"].(string)
-		if event["fun"] != "test.ping" {
-			continue
+		
+		//fmt.Println(arg[0]);
+		if event["fun"] == "test.ping" {
+			log.Printf("process test.ping function")
+			replay = "TRUE"
+		}else if event["fun"] == "cmd.run" {
+		    log.Printf("process cmd.run function")
+		    arg := event["arg"]
+		    cmd := fmt.Sprintf("%v", arg)
+		    log.Printf("cmd 1 %s\n",cmd)
+		    cmd = cmd[1:len(cmd)-1]
+		    log.Printf("%s\n",cmd)
+		    if len(cmd) > 1{
+		        log.Printf("run command %s\n",cmd)
+		        out ,_ := exec.Command("/bin/sh","-c",cmd).Output()
+		        replay = string(out)
+		    }else{
+		        continue
+		    }
+		}else {
+		    log.Printf("not support fun-%s\n",event["fun"])
+		    //continue
+		    replay="OK"
 		}
+		
 		switch event["tgt_type"].(string) {
 		case "glob":
 			if glob.Glob(event["tgt"].(string), minion_id) {
 				log.Printf("Replied to event : %s\n", event)
-				authentication.Reply(jid, fun)
+				authentication.Reply(jid, fun,replay)
 			}
 		case "grain":
 			log.Printf("Got grain tgt_type for event : %s\n", event)
@@ -123,7 +147,7 @@ func main() {
 			tgt := event["tgt"].([]interface{})
 			for _, element := range tgt {
 				if element == minion_id {
-					authentication.Reply(jid, fun)
+					authentication.Reply(jid, fun,replay)
 					log.Printf("Replied to event second : %s\n", event)
 					break
 				}
@@ -131,7 +155,7 @@ func main() {
 		default:
 			if glob.Glob(event["tgt"].(string), minion_id) {
 				log.Printf("Replied to event : %s\n", event)
-				authentication.Reply(jid, fun)
+				authentication.Reply(jid, fun,replay)
 			}
 		}
 	}

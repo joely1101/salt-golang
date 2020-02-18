@@ -5,7 +5,7 @@ import (
 	"os"
 	"strings"
 	"bufio"
-	"github.com/tsaridas/salt-golang/salt-minion/utils"
+	"../utils"
 )
 
 // Get Fully Qualified Domain Name
