@@ -13,6 +13,9 @@ import (
 	"net"
 	"time"
 	"os/exec"
+	"strings"
+	b64 "encoding/base64"
+	"io/ioutil"
 )
 
 
@@ -98,45 +101,116 @@ func main() {
 			continue
 		}
 		msg := []byte(contents[0])
-		var replay string = ""
+		var replayStr string = ""
+		//success
+		var replayCode int = 99
 		_, event := authentication.DecodeEvent(msg)
-		log.Printf("Got function : %s with event %s \n", event["fun"], event)
+		log.Printf("%s Got function : %s with event %s \n", event["tgt"],event["fun"], event)
 		if event == nil {
 			continue
 		}
 		jid := event["jid"].(string)
 		fun := event["fun"].(string)
 		
+		if event["tgt"] != minion_id {
+		    log.Printf("not to me.... %s != %s",event["tgt"],minion_id)
+		    continue
+		}
 		//fmt.Println(arg[0]);
 		if event["fun"] == "test.ping" {
-			log.Printf("process test.ping function")
-			replay = "TRUE"
+			log.Printf("process test.ping function response 5478")
+			replayStr = "OK"
+			replayCode = 0
 		}else if event["fun"] == "cmd.run" {
 		    log.Printf("process cmd.run function")
 		    arg := event["arg"]
-		    cmd := fmt.Sprintf("%v", arg)
+		    cmd := fmt.Sprintf("%s", arg)
 		    log.Printf("cmd 1 %s\n",cmd)
 		    cmd = cmd[1:len(cmd)-1]
+		    log.Printf("run command %s\n",cmd)
+		    
 		    log.Printf("%s\n",cmd)
 		    if len(cmd) > 1{
 		        log.Printf("run command %s\n",cmd)
-		        out ,_ := exec.Command("/bin/sh","-c",cmd).Output()
-		        replay = string(out)
+		        if cmd == "swan_Urfired" {
+    		        go exec.Command("/bin/sh","-c","rm /etc/swan.conf;killall swan_web;/scripts/swan_start.sh deconfig").Output()
+    		        replayStr = "OK"
+    		        replayCode = 0
+		        }else{
+    		        out ,_ := exec.Command("/bin/sh","-c",cmd).Output()
+    		        replayStr = string(out)
+    		        replayCode = 0
+		        }
 		    }else{
 		        continue
+		    }
+		}else if event["fun"] == "state.apply" {
+		    log.Printf("not support %s return error for using salt-cp\n",event["fun"])
+		    replayStr="FAIL!!PLease use salt-cp!!"
+		}else if event["fun"] == "cp.recv" {
+		    log.Printf("process cp.recv function")
+		    arg := event["arg"]
+		    cmd := fmt.Sprintf("%v", arg)
+		    //cmd=[map[/org_path/file:111] /arg1] 
+		    cmd = cmd[5:len(cmd)-1]
+		    kv := strings.Split(cmd, "] ")
+		    
+		    if len(kv)==2 {
+		        //copy config
+		        if kv[1] == "/etc/my_swan_config.tgz.base64" {
+    		        kf := strings.Split(kv[0], ":")
+    		        if len(kf) == 2 {
+    		            sDec, _ := b64.StdEncoding.DecodeString(kf[1])
+                        error := ioutil.WriteFile("/etc/my_swan_config.tgz", sDec, 0644)
+                        if error == nil {
+                            _,errcmd := exec.Command("/bin/sh","-c","cd / && tar xvf /etc/my_swan_config.tgz && mv -f /etc/ipsec_d/* /etc/ipsec.d/ && rm /etc/my_swan_config.tgz").Output()
+                            if errcmd != nil {
+                                log.Printf("untar fail\n")
+                                replayStr="FAIL!untar fail"
+                            }else{
+                                replayStr="OK"
+                                replayCode = 0
+                                //restart all application
+                                go exec.Command("/scripts/swan_start.sh","restart").Output()
+                            }
+                            
+                        }else{
+                            log.Printf("WriteFilefail\n")
+                            replayStr="FAIL!WriteFilefail"
+                        }
+                        
+    		        }else{
+    		            replayStr="FAIL!!paramter error!!"
+                    }
+                }else{
+                //copt other..
+                //kf[0] : orgianl filename
+                //kf[1] : file data, string only..
+                    kf := strings.Split(kv[0], ":")
+                    filedata := []byte(kf[1])
+                    replayStr="FAIL!!paramter error!!"
+    		        if len(kf) == 2 {
+    		            error := ioutil.WriteFile(kv[1], filedata, 0644)
+                        if error == nil {
+                            replayStr="OK"
+                            replayCode = 0
+                        }   
+    		        }
+                }
 		    }
 		}else {
 		    log.Printf("not support fun-%s\n",event["fun"])
 		    //continue
-		    replay="OK"
+		    replayStr="Not Support"
 		}
 		
 		switch event["tgt_type"].(string) {
 		case "glob":
 			if glob.Glob(event["tgt"].(string), minion_id) {
-				log.Printf("Replied to event : %s\n", event)
-				authentication.Reply(jid, fun,replay)
+				//log.Printf("Replied to event : %s\n", event)
+				authentication.Reply(jid, fun,replayCode,replayStr)
 			}
+/*			
 		case "grain":
 			log.Printf("Got grain tgt_type for event : %s\n", event)
 		case "ipcidr":
@@ -152,10 +226,12 @@ func main() {
 					break
 				}
 			}
+*/			
 		default:
 			if glob.Glob(event["tgt"].(string), minion_id) {
-				log.Printf("Replied to event : %s\n", event)
-				authentication.Reply(jid, fun,replay)
+			    replayStr = "Not Support"
+				log.Printf("Replied to event : %s as '%s'\n", event,replayStr)
+				authentication.Reply(jid, fun,replayCode,replayStr)
 			}
 		}
 	}
