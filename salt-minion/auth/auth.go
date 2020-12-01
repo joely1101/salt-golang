@@ -8,7 +8,7 @@ import (
         "crypto/sha1"
 	"crypto/rand"
         "fmt"
-        "github.com/tsaridas/salt-golang/zmqapi"
+        "../../zmqapi"
         "github.com/vmihailenco/msgpack"
         "io"
         "io/ioutil"
